@@ -15,44 +15,179 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
+enum OrderStatus {
+  ACTIVE
+  MATCHED
+  CANCELLED
+}
+
 model User {
-  id        String   @id @default(cuid())
+  id        Int      @id @default(autoincrement())
   email     String   @unique
   password  String
-  firstName String?
-  lastName String?
+  fullName  String?
   role      Role     @default(USER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
+  bids         Bid[]
+  asks         Ask[]
+  buyingSales  Sale[] @relation("BuyerSales")
+  sellingSales Sale[] @relation("SellerSales")
+
+  @@map("users")
+}
+
+model Brand {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  logoUrl  String?
+  products Product[]
+
+  @@map("brands")
+}
+
+model Category {
+  id       Int     @id @default(autoincrement())
+  name     String
+  slug     String  @unique
+  imageUrl String?
+
+  parentId Int?
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryHierarchy")
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Attribute {
+  id     Int              @id @default(autoincrement())
+  name   String           @unique
+  values AttributeValue[]
+
+  @@map("attributes")
+}
+
+model AttributeValue {
+  id          Int       @id @default(autoincrement())
+  value       String
+  attributeId Int
+  attribute   Attribute @relation(fields: [attributeId], references: [id])
+
+  products ProductAttribute[]
+
+  @@map("attribute_values")
+}
+
+model ProductAttribute {
+  productId        Int
+  product          Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  attributeValueId Int
+  attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id], onDelete: Cascade)
+
+  @@id([productId, attributeValueId])
+  @@map("product_attributes")
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  name        String
-  ticker      String   @unique
-  description String?
-  imgUrl     String?
-  createdAt   DateTime @default(now())
+  id           Int       @id @default(autoincrement())
+  tickerSymbol String    @unique
+  name         String
+  description  String?   @db.Text
+  imageUrl     String?
+  retailPrice  Decimal   @db.Decimal(10, 2)
+  releaseDate  DateTime?
+  
+  brandId      Int
+  brand        Brand     @relation(fields: [brandId], references: [id])
 
-  // Relations
-  variants    ProductVariant[]
+  categories   Category[]
+
+  attributes   ProductAttribute[]
+
+  variants     ProductVariant[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("products")
 }
 
 model ProductVariant {
-  id String @id @default(cuid())
-  size String
-  color String
+  id        Int     @id @default(autoincrement())
+  size      String  
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  // Relations
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-  
-  @@unique([productId, size, color])
+  bids  Bid[]
+  asks  Ask[]
+  sales Sale[]
+
+  @@unique([productId, size])
+  @@map("product_variants")
 }
 
-enum Role {
-  USER
-  ADMIN
+model Bid {
+  id        Int         @id @default(autoincrement())
+  price     Decimal     @db.Decimal(10, 2)
+  status    OrderStatus @default(ACTIVE)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  userId    Int
+  user      User           @relation(fields: [userId], references: [id])
+  variantId Int
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  
+  sale      Sale?
+
+  @@index([variantId, status, price(sort: Desc), createdAt(sort: Asc)])
+  @@map("bids")
+}
+
+model Ask {
+  id        Int         @id @default(autoincrement())
+  price     Decimal     @db.Decimal(10, 2)
+  status    OrderStatus @default(ACTIVE)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  userId    Int
+  user      User           @relation(fields: [userId], references: [id])
+  variantId Int
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  
+  sale      Sale?
+
+  @@index([variantId, status, price(sort: Asc), createdAt(sort: Asc)])
+  @@map("asks")
+}
+
+model Sale {
+  id          Int      @id @default(autoincrement())
+  totalPrice  Decimal  @db.Decimal(10, 2)
+  platformFee Decimal  @db.Decimal(10, 2) @default(0)
+  createdAt   DateTime @default(now())
+
+  bidId Int @unique
+  bid   Bid @relation(fields: [bidId], references: [id])
+  askId Int @unique
+  ask   Ask @relation(fields: [askId], references: [id])
+
+  variantId Int
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  
+  buyerId   Int
+  buyer     User @relation("BuyerSales", fields: [buyerId], references: [id])
+  sellerId  Int
+  seller    User @relation("SellerSales", fields: [sellerId], references: [id])
+
+  @@map("sales")
 }
